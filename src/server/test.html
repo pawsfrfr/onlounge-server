@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>onLounge Multiplayer Test</title>
+    <style>
+        body {
+            background: #151515;
+            color: #eee;
+            font-family: monospace;
+            max-width: 600px;
+            margin: 40px auto;
+            padding: 20px;
+        }
+
+        input, button {
+            padding: 10px;
+            margin: 5px 0;
+            font: inherit;
+        }
+
+        button { cursor: pointer; }
+        #code { font-size: 28px; color: #7cff9b; }
+        #players { line-height: 1.8; }
+        #status { color: #ffd166; }
+    </style>
+</head>
+<body>
+    <h1>ONLOUNGE</h1>
+    <p id="status">Connecting...</p>
+
+    <input id="name" placeholder="Your name" value="Player">
+    <br>
+
+    <button onclick="createRoom()">Create Room</button>
+    <br>
+
+    <input id="roomCode" placeholder="Room code" maxlength="6">
+    <button onclick="joinRoom()">Join Room</button>
+
+    <h2>Room: <span id="code">------</span></h2>
+    <h3>Players</h3>
+    <ul id="players"></ul>
+
+    <button onclick="toggleReady()">Toggle Ready</button>
+    <button onclick="startGame()">Start Game</button>
+    <button onclick="leaveRoom()">Leave Room</button>
+
+    <script>
+        const statusEl = document.getElementById("status");
+        const codeEl = document.getElementById("code");
+        const playersEl = document.getElementById("players");
+
+        let socket;
+        let myId = null;
+        let roomCode = null;
+        let ready = false;
+
+        function connect() {
+            socket = new WebSocket("ws://127.0.0.1:8000/ws");
+
+            socket.onopen = () => {
+                statusEl.textContent = "Connected to server";
+            };
+
+            socket.onclose = () => {
+                statusEl.textContent = "Disconnected — refresh to reconnect";
+            };
+
+            socket.onerror = () => {
+                statusEl.textContent = "Connection error";
+            };
+
+            socket.onmessage = event => {
+                const data = JSON.parse(event.data);
+
+                if (data.type === "created" || data.type === "joined") {
+                    roomCode = data.code;
+                    myId = data.player_id;
+                    codeEl.textContent = roomCode;
+                }
+
+                if (data.type === "error") {
+                    statusEl.textContent = data.message;
+                }
+
+                if (data.type === "room_update") {
+                    roomCode = data.code;
+                    codeEl.textContent = data.code;
+                    playersEl.innerHTML = "";
+
+                    data.players.forEach(player => {
+                        const li = document.createElement("li");
+                        li.textContent =
+                            player.name +
+                            (player.is_host ? " [HOST]" : "") +
+                            (player.ready ? " [READY]" : "");
+                        playersEl.appendChild(li);
+                    });
+
+                    statusEl.textContent = "Room status: " + data.status;
+                }
+            };
+        }
+
+        function send(data) {
+            if (socket?.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify(data));
+            }
+        }
+
+        function createRoom() {
+            send({ action: "create", name: getName() });
+        }
+
+        function joinRoom() {
+            send({
+                action: "join",
+                code: document.getElementById("roomCode").value,
+                name: getName()
+            });
+        }
+
+        function toggleReady() {
+            ready = !ready;
+            send({ action: "ready", ready });
+        }
+
+        function startGame() {
+            send({ action: "start" });
+        }
+
+        function leaveRoom() {
+            send({ action: "leave" });
+            roomCode = null;
+            myId = null;
+            ready = false;
+            codeEl.textContent = "------";
+            playersEl.innerHTML = "";
+        }
+
+        function getName() {
+            return document.getElementById("name").value.trim() || "Player";
+        }
+
+        connect();
+    </script>
+</body>
+</html>
